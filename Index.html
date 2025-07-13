@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pulso</title>
+    <link rel="icon" type="image/png" href="https://www.appsheet.com/template/gettablefileurl?appName=APPFOTOS-6147552&tableName=FOTO&fileName=FOTO_Images%2F72d6551e.FOTOGRAFIA.210611.png">
+    
+    <?!= include('Stylesheet'); ?>
+</head>
+<body>
+    <!-- Barra superior fija -->
+    <header class="top-bar">
+      <div class="menu-toggle" id="menu-toggle">&#9776;</div>
+      <div class="user-info" id="user-info"></div>
+    </header>
+
+    <!-- Barra lateral (comienza colapsada por defecto) -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <img src="https://www.appsheet.com/template/gettablefileurl?appName=APPFOTOS-6147552&tableName=FOTO&fileName=FOTO_Images%2F72d6551e.FOTOGRAFIA.210611.png" alt="Logo Pulso" class="app-logo">
+        <h1 class="app-title">Pulso</h1>
+      </div>
+      
+      <ul class="main-menu" id="main-menu">
+        <li class="main-menu-item" id="menu-inicio">
+          <div><img src="https://i.imgur.com/3Q9K8YV.png" alt=""><span>Inicio</span></div>
+        </li>
+        <li class="main-menu-item" id="menu-apps">
+          <div><img src="https://i.imgur.com/s4p3jqy.png" alt=""><span>Aplicaciones</span></div>
+        </li>
+        <li class="main-menu-item" id="menu-tableros-parent">
+          <div>
+            <img src="https://i.imgur.com/kS5xVp6.png" alt=""><span>Tableros</span><span class="arrow">▸</span>
+          </div>
+          <ul class="submenu" id="tableros-submenu"></ul>
+        </li>
+      </ul>
+    </aside>
+
+    <!-- El contenido principal ya no está dentro de #app-container -->
+    <main class="main-content" id="main-content">
+      <div id="loader">Cargando...</div>
+      <div id="content-panel"></div>
+    </main>
+
+    <script>
+      const contentPanel = document.getElementById('content-panel');
+      const loader = document.getElementById('loader');
+      let appData = [];
+      let dashboardData = [];
+      let currentUserEmail = '';
+
+      function getCaseInsensitiveProp(obj, key) {
+        if (!obj) return undefined;
+        const lowerKey = key.toLowerCase();
+        for (const k in obj) {
+          if (k.toLowerCase() === lowerKey) {
+            return obj[k];
+          }
+        }
+        return undefined;
+      }
+
+      document.addEventListener("DOMContentLoaded", function() {
+        try {
+          setupMenuListeners();
+          loader.textContent = 'Procesando datos, por favor espere...';
+          google.script.run.withSuccessHandler(onDataSuccess).withFailureHandler(onError).getMenuData();
+        } catch (e) {
+          onError(e);
+        }
+      });
+
+      function onDataSuccess(response) {
+        try {
+          if (response.error) { throw new Error(response.error); }
+          if (!response.menuData || !Array.isArray(response.menuData)) { throw new Error("Formato de datos inválido."); }
+
+          currentUserEmail = response.user.email;
+          document.getElementById('user-info').textContent = `Usuario: ${currentUserEmail}`;
+
+          dashboardData = response.menuData.filter(item => getCaseInsensitiveProp(item, 'looker'));
+          appData = response.menuData.filter(item => getCaseInsensitiveProp(item, 'App'));
+          
+          populateDashboardSubmenu();
+          showAplicaciones();
+        } catch (e) {
+          onError(e);
+        }
+      }
+
+      function onError(error) {
+        contentPanel.innerHTML = `<p style="padding:20px;color:red;"><b>Error al cargar la aplicación:</b><br>${error.message}</p>`;
+        loader.style.display = 'none';
+      }
+
+      function setupMenuListeners() {
+        document.getElementById('menu-toggle').addEventListener('click', () => {
+          document.body.classList.toggle('sidebar-expanded');
+        });
+
+        document.getElementById('menu-inicio').addEventListener('click', showInicio);
+        document.getElementById('menu-apps').addEventListener('click', showAplicaciones);
+        
+        const tablerosParent = document.getElementById('menu-tableros-parent');
+        tablerosParent.addEventListener('click', (e) => {
+          // Solo expandir si el menú está expandido
+          if (document.body.classList.contains('sidebar-expanded')) {
+            if (e.target.closest('.submenu-item')) return;
+            tablerosParent.classList.toggle('expanded');
+          }
+        });
+      }
+
+      function populateDashboardSubmenu() {
+        try {
+          const submenu = document.getElementById('tableros-submenu');
+          const parentMenu = document.getElementById('menu-tableros-parent');
+          submenu.innerHTML = '';
+
+          if (dashboardData.length === 0) {
+            parentMenu.style.display = 'none';
+            return;
+          }
+          
+          parentMenu.style.display = 'list-item';
+          const fragment = document.createDocumentFragment();
+
+          dashboardData.forEach(item => {
+            const ICONO_POR_DEFECTO_TABLERO = "https://i.imgur.com/kS5xVp6.png";
+            const lookerUrl = getCaseInsensitiveProp(item, 'looker') || '';
+            const nombre = getCaseInsensitiveProp(item, 'Nombre') || '';
+            const numero = getCaseInsensitiveProp(item, 'Numero') || '';
+            const descripcion = getCaseInsensitiveProp(item, 'Descripcion') || nombre;
+            let imgSrc = getCaseInsensitiveProp(item, 'Imagen');
+            if (!imgSrc || String(imgSrc).trim() === '') imgSrc = ICONO_POR_DEFECTO_TABLERO;
+            
+            const li = document.createElement('li');
+            li.className = 'submenu-item';
+            li.dataset.url = lookerUrl;
+            li.title = descripcion;
+            li.innerHTML = `<img src="${imgSrc}" alt="" onerror="this.onerror=null; this.src='${ICONO_POR_DEFECTO_TABLERO}';"><span>${numero} ${nombre}</span>`;
+            
+            li.addEventListener('click', function(e) {
+              e.stopPropagation();
+              setActiveSubmenuItem(this);
+              showIframeView(this.dataset.url);
+            });
+            fragment.appendChild(li);
+          });
+          submenu.appendChild(fragment);
+        } catch (e) {
+          onError(new Error("Ocurrió un error al mostrar la lista de tableros."));
+        }
+      }
+
+      function showInicio() {
+        setActiveMenuItem('menu-inicio');
+        contentPanel.innerHTML = `<div style="padding: 40px; text-align: center;"><h2>Bienvenido a Pulso</h2><p>Seleccione una opción del menú para comenzar.</p></div>`;
+        loader.style.display = 'none';
+      }
+      
+      function showAplicaciones() {
+        setActiveMenuItem('menu-apps');
+        if (appData.length === 0) {
+            contentPanel.innerHTML = `<div style="padding: 40px; text-align: center;"><h3>No tiene aplicaciones asignadas.</h3></div>`;
+            loader.style.display = 'none';
+            return;
+        }
+        let cardHtml = '<div class="card-container">';
+        cardHtml += appData.map(app => {
+          const ICONO_POR_DEFECTO_APP = "https://i.imgur.com/s4p3jqy.png";
+          const appId = getCaseInsensitiveProp(app, 'App') || '';
+          const nombre = getCaseInsensitiveProp(app, 'Nombre') || '';
+          const numero = getCaseInsensitiveProp(app, 'Numero') || '';
+          const descripcion = getCaseInsensitiveProp(app, 'Descripcion') || 'Sin descripción.';
+          let imgSrc = getCaseInsensitiveProp(app, 'Imagen');
+          if (!imgSrc || String(imgSrc).trim() === '') imgSrc = ICONO_POR_DEFECTO_APP;
+          return `<a class="card" href="https://www.appsheet.com/start/${appId}" target="_blank" title="${nombre}"><img src="${imgSrc}" alt="" onerror="this.onerror=null; this.src='${ICONO_POR_DEFECTO_APP}';"><h3>${numero} ${nombre}</h3><p class="card-description">${descripcion}</p></a>`;
+        }).join('');
+        cardHtml += '</div>';
+        contentPanel.innerHTML = cardHtml;
+        loader.style.display = 'none';
+      }
+
+      function showIframeView(url) {
+        setActiveMenuItem('menu-tableros-parent');
+        loader.style.display = 'flex';
+        contentPanel.innerHTML = `<iframe id="content-frame" src="${url}" frameborder="0"></iframe>`;
+        const iframe = document.getElementById('content-frame');
+        iframe.onload = () => loader.style.display = 'none';
+        iframe.onerror = () => {
+          contentPanel.innerHTML = `<p style="padding:20px;color:red;">No se pudo cargar el contenido.</p>`;
+          loader.style.display = 'none';
+        };
+      }
+
+      function setActiveMenuItem(menuId) {
+        document.querySelectorAll('.main-menu-item').forEach(item => item.classList.remove('active'));
+        if (document.getElementById(menuId)) {
+            document.getElementById(menuId).classList.add('active');
+        }
+        if (menuId !== 'menu-tableros-parent') {
+          document.getElementById('menu-tableros-parent').classList.remove('expanded');
+          document.querySelectorAll('.submenu-item').forEach(item => item.classList.remove('active'));
+        }
+      }
+      
+      function setActiveSubmenuItem(element) {
+        document.querySelectorAll('.submenu-item').forEach(item => item.classList.remove('active'));
+        element.classList.add('active');
+      }
+    </script>
+</body>
+</html>
